@@ -1,0 +1,26 @@
+- name: Send consolidated VM report
+  hosts: localhost
+  gather_facts: true
+  vars:
+    collected_metrics: >-
+      {{
+        hostvars |
+        dict2items |
+        selectattr('value.vm_metrics', 'defined') |
+        map(attribute='value.vm_metrics') |
+        list
+      }}
+    timestamp: "{{ ansible_date_time.date }} {{ ansible_date_time.time }}"
+    subject_line: "📊 VM Report – {{ ansible_date_time.date }} {{ ansible_date_time.hour }}:{{ ansible_date_time.minute }}"
+  tasks:
+    - name: Send animated HTML report via email
+      mail:
+        host: "{{ smtp_server }}"
+        port: "{{ smtp_port }}"
+        username: "{{ email_user }}"
+        password: "{{ email_pass }}"
+        to: "{{ alert_recipient }}"
+        subject: "{{ subject_line }}"
+        body: "{{ lookup('template', 'templates/report_email_animated.html.j2') }}"
+        subtype: html
+
