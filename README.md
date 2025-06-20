@@ -1,28 +1,59 @@
-# Ansible Project To Monitor VMs Health
+# Ansible AWS EC2 VM Health Monitoring Project
 
-A comprehensive Ansible project for monitoring the health of AWS EC2 instances with automated tagging and dynamic inventory management.
+A robust Ansible-based solution for monitoring the health of AWS EC2 instances, featuring automated tagging, dynamic inventory, and consolidated email reporting.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation & Setup](#installation--setup)
+- [Configuration](#configuration)
+- [Scripts](#scripts)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
+
+## Features
+
+- **Dynamic AWS EC2 Inventory** using Ansible's AWS plugin
+- **Automated Tagging** of EC2 instances for easy identification
+- **Health Metrics Collection** (CPU, Memory, Disk) from all running instances
+- **Animated HTML Email Reports** with consolidated VM health data
+- **Easy SSH Key Distribution** to all managed instances
+
+---
 
 ## Prerequisites
 
 - Ubuntu/Debian-based system
-- AWS Account with appropriate permissions
+- AWS account with EC2 permissions
 - SSH key pair for EC2 access
+- Python 3.x
+
+---
 
 ## Installation & Setup
 
-### Step 1: Update System
+### 1. System Update
+
 ```bash
 sudo apt update && sudo apt upgrade -y
 ```
 
-### Step 2: Install Ansible
-Add the official Ansible PPA and install:
+### 2. Install Ansible
+
 ```bash
 sudo add-apt-repository --yes --update ppa:ansible/ansible
 sudo apt install ansible -y
 ```
 
-### Step 3: Install AWS CLI
+### 3. Install AWS CLI
+
 ```bash
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 sudo apt install unzip
@@ -31,35 +62,35 @@ sudo ./aws/install
 aws configure
 ```
 
-### Step 4: Setup Python Environment
-```bash
-# Install venv module
-sudo apt install python3-venv -y
+### 4. Python Virtual Environment & Dependencies
 
-# Create and activate virtual environment
+```bash
+sudo apt install python3-venv -y
 python3 -m venv ansible-env
 source ansible-env/bin/activate
-
-# Install required Python packages
 pip install boto3 botocore docker
-
-# Install Ansible AWS collection
 ansible-galaxy collection install amazon.aws
 ```
 
+---
+
 ## Configuration
 
-### Ansible Configuration (ansible.cfg)
+### Ansible Configuration ([ansible.cfg](ansible.cfg))
+
 ```ini
 [defaults]
 inventory = ./inventory/aws_ec2.yaml
 host_key_checking = False
+remote_user = ubuntu
+gathering = smart
 
 [ssh_connection]
 ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
 ```
 
-### Dynamic Inventory (inventory/aws_ec2.yaml)
+### Dynamic Inventory ([inventory/aws_ec2.yaml](inventory/aws_ec2.yaml))
+
 ```yaml
 plugin: amazon.aws.aws_ec2
 regions:
@@ -70,109 +101,107 @@ filters:
 compose:
   ansible_host: public_ip_address
 keyed_groups:
-  - key: tags.Name
-    prefix: name
   - key: tags.Environment
     prefix: env
 ```
 
+### Group Variables ([group_vars/all.yaml](group_vars/all.yaml))
+
+Set your SMTP and email credentials for reporting:
+
+```yaml
+smtp_server: "smtp.gmail.com"
+smtp_port: 587
+email_user: "<your_email>"
+email_pass: "<your_app_password>"
+alert_recipient: "<recipient_email>"
+```
+
+---
+
 ## Scripts
 
-### EC2 Instance Tagging Script
-This script automatically tags your EC2 instances with sequential names:
+### 1. EC2 Instance Tagging ([tagging-script.sh](tagging-script.sh))
 
-```bash
-#!/bin/bash
+Automatically tags EC2 instances with sequential names.
 
-# Fetch instance IDs that match Environment=dev and Role=web
-instance_ids=$(aws ec2 describe-instances \
-  --filters "Name=tag:Environment,Values=dev" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[*].Instances[*].InstanceId' \
-  --output text)
+### 2. SSH Key Distribution ([copy-public-key.sh](copy-public-key.sh))
 
-# Sort instance IDs deterministically
-sorted_ids=($(echo "$instance_ids" | tr '\t' '\n' | sort))
+Copies your public SSH key to all EC2 instances in the dynamic inventory.
 
-# Rename instances sequentially
-counter=1
-for id in "${sorted_ids[@]}"; do
-  name="web-$(printf "%02d" $counter)"
-  echo "Tagging $id as $name"
-  aws ec2 create-tags --resources "$id" \
-    --tags Key=Name,Value="$name"
-  ((counter++))
-done
-```
-
-### SSH Key Distribution Script
-This script copies your public SSH key to all EC2 instances:
-
-```bash
-#!/bin/bash
-
-# Define variables
-PEM_FILE="DevOps-Shack.pem"
-PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
-USER="ubuntu"  # or ec2-user
-INVENTORY_FILE="inventory/aws_ec2.yaml"
-
-# Extract hostnames/IPs from dynamic inventory
-HOSTS=$(ansible-inventory -i $INVENTORY_FILE --list | jq -r '._meta.hostvars | keys[]')
-
-for HOST in $HOSTS; do
-  echo "Injecting key into $HOST"
-  ssh -o StrictHostKeyChecking=no -i $PEM_FILE $USER@$HOST "
-    mkdir -p ~/.ssh && \
-    echo \"$PUB_KEY\" >> ~/.ssh/authorized_keys && \
-    chmod 700 ~/.ssh && \
-    chmod 600 ~/.ssh/authorized_keys
-  "
-done
-```
+---
 
 ## Usage
 
-### 1. Clone the Project
+### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/jaiswaladi246/Ansible-VM-Monitor.git
 cd Ansible-VM-Monitor
 ```
 
 ### 2. Verify Dynamic Inventory
+
 ```bash
 ansible-inventory -i inventory/aws_ec2.yaml --graph
 ```
 
-### 3. Run the Monitoring Playbook
+### 3. Tag EC2 Instances
+
+```bash
+bash tagging-script.sh
+```
+
+### 4. Distribute SSH Key
+
+```bash
+bash copy-public-key.sh
+```
+
+### 5. Run the Monitoring Playbook
+
 ```bash
 ansible-playbook playbook.yaml
 ```
 
+---
+
 ## Project Structure
+
 ```
 Ansible-VM-Monitor/
 ├── ansible.cfg
+├── collect_metrics.yaml
+├── copy-public-key.sh
+├── group_vars/
+│   └── all.yaml
 ├── inventory/
 │   └── aws_ec2.yaml
 ├── playbook.yaml
-├── scripts/
-│   ├── tag_instances.sh
-│   └── copy_ssh_key.sh
-└── README.md
+├── README.md
+├── send_report.yaml
+├── tagging-script.sh
+├── templates/
+│   └── report_email_animated.html.j2
+└── Screenshots/
+    ├── Instances.png
+    ├── successful.png
+    └── tag-script.png
 ```
 
-## Important Notes
-
-- Ensure your AWS credentials are properly configured
-- Make sure your EC2 instances have the appropriate tags (Environment=dev)
-- The PEM file path should be updated according to your setup
-- All instances should be in the 'running' state for the inventory to detect them
+---
 
 ## Troubleshooting
 
-- If you encounter SSH connection issues, verify that your security groups allow SSH access
-- Ensure the correct user (ubuntu/ec2-user) is used based on your AMI
-- Check that your AWS credentials have the necessary EC2 permissions
+- **SSH Issues:** Ensure security groups allow SSH and the correct user (ubuntu/ec2-user) is used.
+- **AWS Credentials:** Confirm your AWS credentials are configured and have necessary permissions.
+- **Inventory Issues:** Make sure EC2 instances are tagged correctly and in the 'running' state.
+- **Email Sending:** Use an app password for Gmail or enable SMTP for your email provider.
 
-## Repository
-GitHub: https://github.com/jaiswaladi246/Ansible-VM-Monitor.git
+---
+
+## License
+
+This project is licensed under the MIT License.
+
+---
